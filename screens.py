@@ -37,9 +37,13 @@ BUTTON_TEXT = {
 }
 
 
-def in_button(x, y):
-    x0, y0, x1, y1 = BUTTON_HIT
+def _inside(box, x, y):
+    x0, y0, x1, y1 = box
     return x0 <= x < x1 and y0 <= y < y1
+
+
+def in_button(x, y):
+    return _inside(BUTTON_HIT, x, y)
 
 
 # ---- helpers -----------------------------------------------------------------
@@ -82,9 +86,13 @@ def gigabytes(n):
 # ---- STATS screen ------------------------------------------------------------
 
 def bar(draw, y, label, percent):
+    """percent None: not known yet (the first 30 s); an empty bar and "-"."""
     draw.text((4, y), label, font=font(14, True), fill=BLACK)
     x0, x1 = 48, 196
     draw.rectangle((x0, y + 2, x1, y + 16), outline=BLACK)
+    if percent is None:
+        text_right(draw, W - 4, y, "-", font(14, True))
+        return
     inner = x1 - x0 - 4
     filled = round(inner * min(max(percent, 0.0), 100.0) / 100.0)
     if filled > 0:
@@ -219,16 +227,68 @@ def render_net(n):
                 d.text((x, y + 17), "total " + human_bytes(total), font=font(10), fill=BLACK)
         y += 34
 
-    text_right(d, W - 4, H - 15, "tap for stats  >", font(10))
+    text_right(d, W - 4, H - 15, "tap for power  >", font(10))
+    return image
+
+
+# ---- POWER screen ------------------------------------------------------------
+# | POWER  host                                    clock |
+# |   [    REBOOT    ]          [   POWER OFF    ]       |
+# |                                tap here for stats  > |
+# Each button reacts across its half of the screen, out to the side edge (a
+# finger cannot overshoot an edge). The halves meet in the middle and never
+# overlap. Above and below the buttons a tap goes to the next screen.
+POWER_BOX = {"reboot": (10, 32, 117, 80), "poweroff": (133, 32, 240, 80)}    # drawn: 108 x 49 px
+POWER_HIT = {"reboot": (0, 26, 125, 90), "poweroff": (125, 26, W, 90)}       # ~24 x 12 mm each
+POWER_LABEL = {"reboot": "REBOOT", "poweroff": "POWER OFF"}
+POWER_BUSY = {"reboot": "rebooting…", "poweroff": "powering off…"}
+
+
+def power_button(x, y):
+    """The POWER button whose touch area holds (x, y): "reboot", "poweroff" or None."""
+    return next((name for name, box in POWER_HIT.items() if _inside(box, x, y)), None)
+
+
+def draw_power_button(d, name, mode):
+    """mode: "idle"; "confirm" (armed: filled, the next tap on it acts);
+    "busy" (systemctl is on it)."""
+    box = POWER_BOX[name]
+    x0, y0, x1, y1 = box
+    cx = (x0 + x1) / 2
+    filled = mode == "confirm"
+    ink = WHITE if filled else BLACK
+    d.rounded_rectangle(box, radius=6, outline=BLACK, width=2, fill=BLACK if filled else WHITE)
+    if mode == "confirm":
+        text_center(d, cx, y0 + 8, "tap again to", font(10), fill=ink)
+        text_center(d, cx, y0 + 23, POWER_LABEL[name], font(14, True), fill=ink)
+    elif mode == "busy":
+        text_center(d, cx, y0 + 16, POWER_BUSY[name], font(12, True), fill=ink)
+    else:
+        text_center(d, cx, y0 + 16, POWER_LABEL[name], font(14, True), fill=ink)
+
+
+def render_power(host, reboot, poweroff):
+    """reboot, poweroff: the mode of each button (see draw_power_button)."""
+    image, d = canvas()
+    clock = time.strftime("%H:%M")
+    d.text((4, 2), fit(d, f"POWER   {host}", font(13, True), 190), font=font(13, True), fill=BLACK)
+    text_right(d, W - 4, 3, clock, font(12))
+    d.line((0, 21, W, 21), fill=BLACK)
+    draw_power_button(d, "reboot", reboot)
+    draw_power_button(d, "poweroff", poweroff)
+    text_right(d, W - 4, H - 15, "tap here for stats  >", font(10))
     return image
 
 
 # ---- shown when the app stops ------------------------------------------------
 
-def render_stopped():
+def render_stopped(powered_off=False):
     """E-paper keeps its last image without power. Without this screen, numbers
-    from a dead program would look current."""
+    from a dead program would look current.
+
+    powered_off: the whole Pi is shutting down (reboot or poweroff), not only
+    this program (systemctl stop, Ctrl+C)."""
     image, d = canvas()
-    text_center(d, W / 2, 40, "display stopped", font(14, True))
+    text_center(d, W / 2, 40, "powered off" if powered_off else "display stopped", font(14, True))
     text_center(d, W / 2, 62, time.strftime("%Y-%m-%d %H:%M"), font(12))
     return image

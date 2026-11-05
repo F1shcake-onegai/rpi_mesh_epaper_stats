@@ -6,14 +6,16 @@ After=local-fs.target
 
 [Service]
 Type=simple
-# root: starting and stopping mesh.service, mesh-down.sh and batctl need it
+# root: starting and stopping mesh.service, mesh-down.sh, batctl, reboot and
+# poweroff need it
 User=root
 # gpiozero's lgpio backend creates .lgd-nfy* files in the working directory
 WorkingDirectory=/opt/rpi_mesh_epaper_stats
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/usr/bin/python3 /opt/rpi_mesh_epaper_stats/app.py
-# SIGTERM lets app.py finish the current refresh, draw "display stopped" and
-# put the panel to sleep (about 5 s); give it room
+# SIGTERM lets app.py finish the current refresh, draw "display stopped" (or
+# "powered off" when the Pi is shutting down) and put the panel to sleep
+# (about 5 s); give it room
 TimeoutStopSec=20
 # also covers boot races where /dev/spidev0.0 or /dev/i2c-1 is not there yet
 Restart=on-failure

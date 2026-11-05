@@ -1,12 +1,13 @@
 # rpi_mesh_epaper_stats
 
 A status display for a [rpi_mesh_autodns](https://github.com/F1shcake-onegai/rpi_mesh_autodns)
-node on the Waveshare 2.13" Touch e-Paper HAT (V4), with three screens:
+node on the Waveshare 2.13" Touch e-Paper HAT (V4), with four screens:
 
 - **STATS**: CPU and memory.
 - **MESH**: the mesh, both radios, a QR code for joining the access point, and a button
   to turn the mesh on and off.
 - **NET**: how much data the mesh and the radios receive and send.
+- **POWER**: reboot and power off buttons.
 
 It is also a worked example. The second half of this file, [Writing your own touch e-paper
 app](#writing-your-own-touch-e-paper-app), explains how to build an app like this, step
@@ -23,36 +24,55 @@ own, with small programs in [`examples/`](examples/).
 | ![armed button](docs/mesh_ap_confirm.png) | ![mesh starting](docs/mesh_starting.png) |
 | **NET, mesh on** | **NET, mesh off** |
 | ![net screen, mesh on](docs/net_mesh_on.png) | ![net screen, mesh off](docs/net_mesh_off.png) |
+| **POWER** | **POWER, power off armed: tap again to power off** |
+| ![power screen](docs/power.png) | ![power off armed](docs/power_confirm.png) |
+| **POWER, rebooting** | **after a reboot or power off** |
+| ![rebooting](docs/power_busy.png) | ![powered off](docs/powered_off.png) |
 
 ## What it does
 
 ```
-          tap anywhere            tap anywhere but the button
-  STATS ───────────────► MESH ───────────────────────────────► NET
-    ▲                     │  tap the button     → it asks "turn OFF?"   │
-    │                     │  tap it again (5 s) → the mesh switches     │
-    └──────────────────────────── tap anywhere ─────────────────────────┘
+          tap anywhere            tap anywhere but the button          tap anywhere
+  STATS ───────────────► MESH ───────────────────────────────► NET ───────────────► POWER
+    ▲                     │  tap the button     → it asks "turn OFF?"                │
+    │                     │  tap it again (5 s) → the mesh switches                  │
+    │                                                                                │
+    │                        tap REBOOT or POWER OFF → that one asks "tap again to"  │
+    │                        tap it again (5 s)      → the Pi reboots / powers off   │
+    └────────────────────── tap anywhere but the buttons ────────────────────────────┘
   Any screen: long press (hold 1 s) → hard refresh (white, then the screen).
   Every 30 s the screen is redrawn with fresh data, if anything changed.
 ```
 
-- **STATS**: host name, time, CPU use (average over the last 30 s), memory used.
+- **STATS**: host name, time, CPU use (average over the last 30 s; "-" for the first
+  30 s after start), memory used.
 - **MESH**:
   - whether the mesh is on, and the node address
   - for wlan0 and wlan1: the job (mesh, AP, client, gateway, idle or absent), the SSID,
     and the number of peers or clients
   - when wlan1 runs the access point, a QR code that joins it (the AP is open for now)
   - the mesh button, top right
-- **NET**: data received and sent, as a speed (average since the last update, about
-  30 s) and a total (since the interface came up):
+- **NET**: data received and sent, as a speed (average over the last 30 s; "-" for the
+  first 30 s) and a total (since the interface came up):
   - while the mesh is on: **mesh** (`bat0`, the data this Pi exchanges with the mesh)
     and **wlan1**
   - while the mesh is off: **wlan0** and **wlan1**
   - `bat0` is created at every mesh start, so its totals count from then. The wlan0
     radio is not shown while the mesh is on: its counters would also include traffic
     this Pi relays for other Pis and batman-adv's own announcements.
-- **When the program stops**, it draws "display stopped" with the date and time. E-paper
+- **POWER**: the host name, and two buttons side by side, **REBOOT** and **POWER OFF**.
+  - The first tap on a button arms it: it turns black and says "tap again to". A second
+    tap on the same button within 5 s reboots or powers off the Pi.
+  - Only one button is armed at a time. With REBOOT armed, a tap on POWER OFF puts
+    REBOOT back to normal and arms POWER OFF instead, and the other way round.
+  - Once confirmed, the button shows "rebooting…" or "powering off…".
+  - A tap anywhere else (the header, the footer) disarms and goes to STATS.
+- **When the program stops**, it draws a last screen with the date and time. E-paper
   keeps its picture without power; without that screen, old numbers would look current.
+  - **"powered off"** when the whole Pi is shutting down normally: a reboot or power
+    off, from the POWER screen, a shell (`sudo reboot`, `sudo poweroff`) or anywhere else.
+  - **"display stopped"** when only the program stops: Ctrl+C when you run it by hand,
+    or `systemctl stop epaper-stats`.
 
 ## Install on the Pi
 
@@ -88,8 +108,8 @@ they are not, fix `to_landscape()` in `panel.py` before anything else.
 Only one program can use the display's pins at a time. Stop the service
 (`sudo systemctl stop epaper-stats`) before running `app.py` by hand.
 
-It runs as root because starting and stopping `mesh.service`, `mesh-down.sh` and `batctl`
-need root, as `mesh-config` does.
+It runs as root because starting and stopping `mesh.service`, `mesh-down.sh`, `batctl`,
+reboot and power off need root, as `mesh-config` does.
 
 ## Files
 
@@ -100,6 +120,7 @@ need root, as `mesh-config` does.
 | `stats.py` | CPU and memory from `/proc` | no |
 | `mesh.py` | mesh status (systemctl, iw, batctl, mesh-config's files); the on/off switch | no |
 | `net.py` | bytes received and sent, from `/sys/class/net`; turns them into speeds | no |
+| `power.py` | reboot and power off; tells a shutdown of the Pi from a stop of the program | no |
 | `panel.py` | sends images to the panel, turns touch reports into gestures | yes |
 | `TP_lib/` | Waveshare's drivers, copied (see the end of this file) | yes |
 | `test_app.py` | tests that run on any computer | no |
@@ -115,6 +136,7 @@ The app is built in layers. Only the bottom one touches hardware:
    ├── stats.py     /proc  → numbers
    ├── mesh.py      systemctl, iw, batctl → MeshStatus; the switch runs in a thread
    ├── net.py       /sys/class/net → speeds and totals
+   ├── power.py     systemctl reboot / poweroff in a thread; "is the Pi shutting down?"
    └── panel.py     image  → glass, glass → gestures    the only hardware code
           └── TP_lib     Waveshare: SPI, I2C, GPIO
 ```
@@ -126,9 +148,18 @@ order:
 
 1. A tap or long press: `handle_touch()` picks the next state and action, then the
    screen is redrawn.
-2. The button was armed and 5 s passed without a second tap: disarm, redraw.
-3. 30 s since the last update: read fresh data, redraw.
-4. The mesh is starting or stopping: check every 3 s, redraw.
+2. A button was armed and 5 s passed without a second tap: disarm, redraw.
+3. 30 s since the last update: close the CPU and network averaging window (whatever the
+   screen), read fresh data, redraw.
+4. The mesh is starting or stopping, or a reboot or power off is under way: check every
+   3 s, redraw.
+
+**Averages** (`App.sample` in `app.py`). CPU use and network speeds are averages over a
+window between two readings of the kernel's counters. The window closes every 30 s on a
+fixed clock, whatever screen is shown, and drawing a screen only shows the last closed
+window. So STATS and NET always show the last 30 s, even right after you switch to them.
+(Measuring from the last time the screen was drawn would show the average of all the time
+you spent on other screens.)
 
 **Refreshing** (`refresh_kind()` in `app.py`). Every redraw renders the screen first,
 then picks the cheapest refresh that will do:
@@ -170,6 +201,20 @@ after a refresh: it has to lift first.
 - The switch does not change whether the mesh starts at boot.
 - Turning the mesh on takes wlan0 away from NetworkManager, so an SSH session over wlan0
   drops. The display keeps working; that is one reason to have it.
+
+**Reboot and power off** (`PowerSwitch` and `system_stopping` in `power.py`):
+
+- A confirmed button runs `systemctl reboot` or `systemctl poweroff` in a background
+  thread. If that fails, the error is logged and the button goes back to normal.
+- systemd then stops every service, this one included, with SIGTERM: the same signal as
+  `systemctl stop epaper-stats`. To tell the two apart, the app asks
+  `systemctl is-system-running` on its way out. It says `stopping` during any shutdown,
+  however it was started, and the app draws "powered off"; otherwise "display stopped".
+- Run by hand over SSH, the program also gets SIGHUP when the login session is stopped at
+  shutdown, or when the SSH connection closes. It handles SIGHUP like SIGTERM, so it still
+  draws its last screen. Under `nohup` it leaves SIGHUP ignored and keeps running.
+- Only a normal shutdown can draw the last screen. If the power is cut, the glass keeps
+  whatever it showed; the clock on every screen tells you how old that is.
 
 ---
 
@@ -262,7 +307,11 @@ A fingertip is 8–10 mm wide: about 40–50 pixels on this panel. The "ON" on t
   accident of your code.
 - **Make dangerous actions hard to trigger by accident.** Put them in a corner and ask for
   a second tap. Turning the mesh off disconnects everyone on the access point, so the
-  button asks "turn OFF?" first.
+  button asks "turn OFF?" first. REBOOT and POWER OFF ask "tap again to" the same way.
+- **Remember which button is armed, not only that one is.** With two dangerous buttons
+  side by side, a first tap on REBOOT followed by a tap on POWER OFF must not power off.
+  Here the app keeps the armed button's name (`App.armed`), and a tap on another button
+  arms that one instead.
 
 While you work on the layout, draw the touch areas in your previews to see them:
 `draw.rectangle(BUTTON_HIT, outline=0)`.
@@ -281,7 +330,11 @@ code:
 | MESH | tap the button, armed | MESH | switch the mesh |
 | MESH | tap the button, mesh starting or stopping | MESH | nothing |
 | MESH | tap anywhere else | NET | disarm |
-| NET | tap anywhere | STATS | |
+| NET | tap anywhere | POWER | |
+| POWER | tap REBOOT or POWER OFF | POWER | arm that button for 5 s (and only that one) |
+| POWER | tap the armed button | POWER | reboot or power off |
+| POWER | tap a button, reboot or power off under way | POWER | nothing |
+| POWER | tap anywhere else | STATS | disarm |
 
 Then the table becomes one function, `handle_touch()` in `app.py`. It does no drawing and
 no hardware, and does not read the clock. It takes the state and the gesture and returns
@@ -298,6 +351,9 @@ Adding a screen means adding a state, a render function and some rows in
 2. a data module, `net.py`, that reads the numbers
 3. a render function, `render_net()` in `screens.py`
 4. one line in `App.render()` that connects the two
+
+POWER followed the same steps (`POWER = 3`, `power.py`, `render_power()`), plus its
+buttons in `button_at()`.
 
 ### 7. Decide when to refresh
 
@@ -342,15 +398,18 @@ and the screen shows garbage.
   `refresh_kind()` are plain functions, a test is one line:
 
   ```python
-  assert app.handle_touch(app.MESH, "tap", 230, 20, False, False) == (app.MESH, True, None)
+  assert app.handle_touch(app.MESH, "tap", 230, 20, None, False) == (app.MESH, "mesh", None)
+  assert app.handle_touch(app.POWER, "tap", 190, 56, "reboot", False) == (app.POWER, "poweroff", None)
   assert app.refresh_kind(None, False, 20) == "full"
   ```
 
 ### 10. Run it as a service
 
-- **Handle SIGTERM.** `systemctl stop` sends SIGTERM, not Ctrl+C. Set a flag, let the loop
-  finish its refresh, draw the stopped screen, then `epd.sleep()` and `epd.Dev_exit()`.
-  See `main()` in `app.py`.
+- **Handle SIGTERM.** `systemctl stop` sends SIGTERM, not Ctrl+C, and so does a reboot or
+  power off. Set a flag, let the loop finish its refresh, draw the last screen, then
+  `epd.sleep()` and `epd.Dev_exit()`. See `main()` in `app.py`. To say "powered off"
+  rather than "stopped", ask systemd whether the whole system is stopping
+  (`system_stopping()` in `power.py`).
 - **Log, don't print.** Use `logging` at INFO, so the journal holds what matters. Waveshare's
   touch driver printed every report; this copy logs them at DEBUG instead.
 - **Set `WorkingDirectory=`.** gpiozero's lgpio backend creates `.lgd-nfy*` files in the
@@ -373,11 +432,13 @@ and the screen shows garbage.
 | an error that a GPIO pin is busy or in use | another copy (often the service) has the pins |
 | an error opening `/dev/spidev0.0` or `/dev/i2c-1` | SPI or I2C not enabled |
 | `systemctl stop` hangs, then kills the program | SIGTERM not handled |
+| CPU or speeds look wrong right after switching to their screen | averaged since the screen was last drawn; sample on a fixed clock instead |
+| a reboot leaves "display stopped" on the glass | the app cannot tell a shutdown from a stop; ask `systemctl is-system-running` |
 | the journal fills with numbers | `print()` in a loop |
 
 ### Ideas to try
 
-- A fourth screen with the CPU temperature (`/sys/class/thermal/thermal_zone0/temp`) and
+- Another screen with the CPU temperature (`/sys/class/thermal/thermal_zone0/temp`) and
   uptime. Follow the four steps at the end of section 6.
 - A swipe (the finger moves more than 60 px before lifting) to switch screens. Track
   where the finger is in `Panel.poll`, not only where it landed.

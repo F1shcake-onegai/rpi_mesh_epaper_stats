@@ -2,8 +2,9 @@
 
 The kernel counts the bytes of every interface since it came up, in
 /sys/class/net/<name>/statistics/{rx,tx}_bytes. A speed is the difference
-between two readings divided by the time between them, so, like the CPU
-reading, it is the average since the previous reading (about 30 s).
+between two readings divided by the time between them. Like the CPU
+reading, the app takes one every 30 s whatever the screen, so a speed is
+always the average of the last 30 s.
 
 Rows on the screen:
   mesh on   mesh (bat0)  and  wlan1
@@ -50,36 +51,40 @@ def counters(name):
 
 
 class NetMeter:
-    """Remembers the previous reading of every interface to turn byte counts into speeds."""
+    """Turns byte counts into speeds, averaged over a sampling window.
+
+    sample() closes one window and opens the next. The app calls it every
+    30 s whatever the screen, so the speeds are always those of the last
+    30 s, not of the time since the NET screen was last drawn.
+    """
 
     def __init__(self):
-        self._last = {}            # name -> (time, rx, tx)
+        self._last = {}            # name -> (time, rx, tx) where the current window started
+        self.rates = {}            # name -> (rx_rate, tx_rate) in bytes/s over the last window
         self.sample()
 
     def sample(self):
-        """name -> (rx_rate, tx_rate, rx_total, tx_total), or None for a missing interface."""
         now = time.monotonic()
-        out = {}
+        rates = {}
         for name in SAMPLED:
             c = counters(name)
             prev = self._last.pop(name, None)
             if c is None:
-                out[name] = None
-                continue
+                continue                       # no such interface: no rate
             rx, tx = c
             self._last[name] = (now, rx, tx)
-            if prev is None or now <= prev[0] or rx < prev[1] or tx < prev[2]:
-                # first reading, or the interface was re-created (bat0 at every mesh start)
-                out[name] = (None, None, rx, tx)
-            else:
+            # No rate after the first reading, or when the counters went down:
+            # the interface was re-created (bat0 at every mesh start).
+            if prev is not None and now > prev[0] and rx >= prev[1] and tx >= prev[2]:
                 dt = now - prev[0]
-                out[name] = ((rx - prev[1]) / dt, (tx - prev[2]) / dt, rx, tx)
-        return out
+                rates[name] = ((rx - prev[1]) / dt, (tx - prev[2]) / dt)
+        self.rates = rates
 
 
 def read(meter):
+    """The NET screen's rows: speeds from the meter's last window; totals
+    and the mesh state as they are now."""
     state = mesh.service_state()
-    samples = meter.sample()
     gateway_if = mesh.gateway_iface()
     names = (MESH_IFACE, "wlan1") if state == "active" else ("wlan0", "wlan1")
     rows = []
@@ -88,6 +93,9 @@ def read(meter):
             label, detail = "mesh", MESH_IFACE
         else:
             label, detail = name, mesh.iface_info(name, gateway_if).job
-        s = samples.get(name)
-        rows.append(Traffic(label, detail, *s) if s else Traffic(label, detail))
+        totals = counters(name)
+        if totals is None:
+            rows.append(Traffic(label, detail))
+        else:
+            rows.append(Traffic(label, detail, *meter.rates.get(name, (None, None)), *totals))
     return NetStats(state, rows)
