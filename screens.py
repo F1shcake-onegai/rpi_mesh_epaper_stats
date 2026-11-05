@@ -267,8 +267,15 @@ def draw_power_button(d, name, mode):
         text_center(d, cx, y0 + 16, POWER_LABEL[name], font(14, True), fill=ink)
 
 
-def render_power(host, reboot, poweroff):
-    """reboot, poweroff: the mode of each button (see draw_power_button)."""
+def short_version(version):
+    """4d29278 for a full commit hash, keeping deploy.sh's "-dirty"."""
+    base = version.removesuffix("-dirty")
+    return base[:7] + version[len(base):]
+
+
+def render_power(host, reboot, poweroff, version=""):
+    """reboot, poweroff: the mode of each button (see draw_power_button).
+    version: the installed commit (version.txt); not shown when empty."""
     image, d = canvas()
     clock = time.strftime("%H:%M")
     d.text((4, 2), fit(d, f"POWER   {host}", font(13, True), 190), font=font(13, True), fill=BLACK)
@@ -276,6 +283,8 @@ def render_power(host, reboot, poweroff):
     d.line((0, 21, W, 21), fill=BLACK)
     draw_power_button(d, "reboot", reboot)
     draw_power_button(d, "poweroff", poweroff)
+    if version:
+        d.text((4, H - 15), "ver " + short_version(version), font=font(10), fill=BLACK)
     text_right(d, W - 4, H - 15, "tap here for stats  >", font(10))
     return image
 

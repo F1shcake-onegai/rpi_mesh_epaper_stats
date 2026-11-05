@@ -47,8 +47,19 @@ FULL_AFTER_PARTIALS = 20   # partial refreshes before a full one is a must (~10 
 SETTLE_EVERY = 3           # s between status checks while the mesh switches or a reboot is under way
 CONFIRM_FOR = 5            # s the button waits for the confirming second tap
 TICK = 0.01                # s between touch polls
+VERSION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "version.txt")
 
 log = logging.getLogger("app")
+
+
+def read_version():
+    """The git commit this copy was installed from (version.txt, written by
+    deploy.sh), or "" when it runs straight from a clone."""
+    try:
+        with open(VERSION_FILE) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
 
 
 def button_at(state, x, y):
@@ -116,6 +127,7 @@ class App:
         self.power_shown = None            # (reboot mode, poweroff mode) on the glass, POWER only
         self.shown_bytes = None            # the picture on the glass, to skip needless refreshes
         self.partials = 0                  # partial refreshes since the last full one
+        self.version = read_version()      # shown on the POWER screen
 
     # ---- data --------------------------------------------------------------
 
@@ -151,7 +163,7 @@ class App:
             return screens.render_net(net.read(self.net))
         if self.state == POWER:
             self.power_shown = self.power_modes()
-            return screens.render_power(socket.gethostname(), *self.power_shown)
+            return screens.render_power(socket.gethostname(), *self.power_shown, version=self.version)
         status = mesh.read_status()
         button = self.button_mode(status)
         self.mesh_shown = (status, button)
@@ -227,6 +239,9 @@ class App:
             self.stop.wait(TICK)
 
 
+PREVIEW_VERSION = "4d29278d1e0c3b6a9f5e2d7c8b1a0f9e6d5c4b3a"
+
+
 def preview(outdir):
     """Render every screen with made-up data into PNGs (1 px = 1 panel pixel)."""
     os.makedirs(outdir, exist_ok=True)
@@ -251,9 +266,9 @@ def preview(outdir):
         "net_mesh_off": screens.render_net(net.NetStats("inactive", [
             net.Traffic("wlan0", "client", 850, 120, 734_000_000, 21_400_000),
             net.Traffic("wlan1", "absent")])),
-        "power": screens.render_power("m782li", "idle", "idle"),
-        "power_confirm": screens.render_power("m782li", "idle", "confirm"),
-        "power_busy": screens.render_power("m782li", "busy", "idle"),
+        "power": screens.render_power("m782li", "idle", "idle", version=PREVIEW_VERSION),
+        "power_confirm": screens.render_power("m782li", "idle", "confirm", version=PREVIEW_VERSION),
+        "power_busy": screens.render_power("m782li", "busy", "idle", version=PREVIEW_VERSION),
         "stopped": screens.render_stopped(),
         "powered_off": screens.render_stopped(powered_off=True),
     }
@@ -277,6 +292,8 @@ def main():
     if args.debug:
         logging.getLogger("panel").setLevel(logging.DEBUG)
         log.setLevel(logging.DEBUG)
+    # first thing in the journal, so a failed update shows which version failed
+    log.info("version %s", read_version() or "unknown (no version.txt: not installed by deploy.sh)")
 
     # systemctl stop, reboot and poweroff send SIGTERM, Ctrl+C sends SIGINT.
     # All only set a flag: the loop finishes its current refresh, then the

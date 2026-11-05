@@ -60,7 +60,8 @@ own, with small programs in [`examples/`](examples/).
   - `bat0` is created at every mesh start, so its totals count from then. The wlan0
     radio is not shown while the mesh is on: its counters would also include traffic
     this Pi relays for other Pis and batman-adv's own announcements.
-- **POWER**: the host name, and two buttons side by side, **REBOOT** and **POWER OFF**.
+- **POWER**: the host name, the installed version (bottom left), and two buttons side by
+  side, **REBOOT** and **POWER OFF**.
   - The first tap on a button arms it: it turns black and says "tap again to". A second
     tap on the same button within 5 s reboots or powers off the Pi.
   - Only one button is armed at a time. With REBOOT armed, a tap on POWER OFF puts
@@ -77,36 +78,64 @@ own, with small programs in [`examples/`](examples/).
 ## Install on the Pi
 
 ```bash
-# 1. SPI and I2C on, then reboot
-sudo raspi-config nonint do_spi 0
-sudo raspi-config nonint do_i2c 0
-sudo reboot
-
-# 2. Packages (all from apt; nothing is cloned from git)
-sudo apt install python3-gpiozero python3-lgpio python3-spidev python3-smbus \
-                 python3-numpy python3-pil python3-qrcode fonts-dejavu-core
-
-# 3. The program
-sudo cp -r rpi_mesh_epaper_stats /opt/
-
-# 4. Try it by hand and check the touch direction (Ctrl+C to stop)
-cd /opt/rpi_mesh_epaper_stats
-sudo python3 app.py --debug
-
-# 5. Run it as a service
-sudo cp epaper-stats.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now epaper-stats
-journalctl -u epaper-stats -f
+sudo apt install git
+git clone https://github.com/F1shcake-onegai/rpi_mesh_epaper_stats.git
+cd rpi_mesh_epaper_stats
+sudo ./deploy.sh install
 ```
 
-In step 4, tap the four corners of the screen, holding the Pi so the text reads the right
-way up. The log shows `tap at (x, y)` for each tap. Top left should be near (0, 0),
-top right near (249, 0), bottom left near (0, 121) and bottom right near (249, 121). If
-they are not, fix `to_landscape()` in `panel.py` before anything else.
+`deploy.sh install` does only what is still missing:
 
-Only one program can use the display's pins at a time. Stop the service
-(`sudo systemctl stop epaper-stats`) before running `app.py` by hand.
+- installs the packages (`python3-gpiozero python3-lgpio python3-spidev python3-smbus
+  python3-numpy python3-pil python3-qrcode fonts-dejavu-core rsync git`), all from apt
+- turns on SPI and I2C. If they were off, the Pi needs one reboot before the display
+  starts; `deploy.sh` says so and does not reboot by itself.
+- copies the program to `/opt/rpi_mesh_epaper_stats`, and writes the git commit it came
+  from into `version.txt` there (with `-dirty` added if the clone had uncommitted changes)
+- installs and enables `epaper-stats.service`, restarts it, and checks that it keeps
+  running for 10 s
+
+The installed version is the first line in the journal (`journalctl -u epaper-stats`) and
+is shown at the bottom left of the POWER screen.
+
+**Update** (needs internet):
+
+```bash
+sudo /opt/rpi_mesh_epaper_stats/deploy.sh update
+```
+
+- It asks GitHub for its newest commit and compares it with `version.txt`. Up to date:
+  nothing happens.
+- Newer: it downloads that commit and installs it with the new version's own `deploy.sh`,
+  then restarts only `epaper-stats.service`. The Pi, the mesh and everything else keep
+  running; the screen shows "display stopped" for a few seconds.
+- If the new version does not keep running for 10 s, the previous one (kept in
+  `/opt/rpi_mesh_epaper_stats.prev`) is put back and restarted.
+- It only moves forward along GitHub's history. A version GitHub does not have (installed
+  from a clone with commits not pushed yet) is left alone.
+
+**Remove**:
+
+```bash
+sudo /opt/rpi_mesh_epaper_stats/deploy.sh remove      # or: uninstall, purge (the same)
+```
+
+It stops and disables the service (the screen keeps "display stopped"), and deletes the
+unit, `/opt/rpi_mesh_epaper_stats` and the `.prev` copy. SPI, I2C and the packages stay.
+
+**Try it by hand** and check the touch direction (Ctrl+C to stop):
+
+```bash
+sudo systemctl stop epaper-stats       # only one program can use the display's pins
+cd /opt/rpi_mesh_epaper_stats
+sudo python3 app.py --debug
+sudo systemctl start epaper-stats
+```
+
+Tap the four corners of the screen, holding the Pi so the text reads the right way up. The
+log shows `tap at (x, y)` for each tap. Top left should be near (0, 0), top right near
+(249, 0), bottom left near (0, 121) and bottom right near (249, 121). If they are not, fix
+`to_landscape()` in `panel.py` before anything else.
 
 It runs as root because starting and stopping `mesh.service`, `mesh-down.sh`, `batctl`,
 reboot and power off need root, as `mesh-config` does.
@@ -127,6 +156,8 @@ reboot and power off need root, as `mesh-config` does.
 | `OFFICIAL_EXAMPLE.md` | tutorial: Waveshare's official example, then a first app of your own | |
 | `examples/` | the tutorial's four small programs | yes |
 | `epaper-stats.service` | systemd unit | |
+| `deploy.sh` | runs on the Pi: `install`, `update` from GitHub, `remove` | |
+| `version.txt` | written by `deploy.sh` in the installed copy: the git commit; not in git | |
 
 The app is built in layers. Only the bottom one touches hardware:
 

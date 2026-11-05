@@ -212,6 +212,13 @@ def test_power_touch_areas_meet_in_the_middle_and_reach_the_sides():
         assert screens.power_button(bx0, by0) == name and screens.power_button(bx1, by1) == name
 
 
+def test_short_version():
+    full = "4d29278d1e0c3b6a9f5e2d7c8b1a0f9e6d5c4b3a"
+    assert screens.short_version(full) == "4d29278"
+    assert screens.short_version(full + "-dirty") == "4d29278-dirty"
+    assert screens.short_version("unknown") == "unknown"
+
+
 def test_wifi_qr_escapes_special_characters():
     assert screens.wifi_qr_payload("a;b") == "WIFI:T:nopass;S:a\\;b;;"
 
@@ -223,6 +230,7 @@ def test_every_screen_has_the_panel_size():
     for image in (screens.render_stats(s), screens.render_stats(stats.Stats("pi", None, 1, 4)),
                   screens.render_mesh(m, "on"), screens.render_net(n),
                   screens.render_power("pi", "confirm", "idle"), screens.render_power("pi", "idle", "busy"),
+                  screens.render_power("pi", "idle", "idle", version="4d29278d1e0c-dirty"),
                   screens.render_stopped(), screens.render_stopped(powered_off=True)):
         assert image.size == (screens.W, screens.H) and image.mode == "1"
 
