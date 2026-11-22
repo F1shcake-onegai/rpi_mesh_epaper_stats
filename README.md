@@ -49,7 +49,7 @@ own, with small programs in [`examples/`](examples/).
 - **MESH**:
   - whether the mesh is on, and the node address
   - for wlan0 and wlan1: the job (mesh, AP, client, gateway, idle or absent), the SSID,
-    and the number of peers or clients
+    and the number of peers or clients, or as a client its IP address
   - when wlan1 runs the access point, a QR code that joins it (the AP is open for now)
   - the mesh button, top right
 - **NET**: data received and sent, as a speed (average over the last 30 s; "-" for the

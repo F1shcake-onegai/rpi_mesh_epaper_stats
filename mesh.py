@@ -26,7 +26,7 @@ class Iface:
     name: str
     job: str            # mesh, AP, client, gateway, idle, absent, or iw's mode
     ssid: str = ""
-    detail: str = ""    # "3 peers", "2 clients", ...
+    detail: str = ""    # "3 peers", "2 clients", a client's IP address, ...
 
 
 @dataclass
@@ -68,6 +68,11 @@ def service_state():
     return _run("systemctl", "is-active", MESH_UNIT).strip() or "unknown"
 
 
+def iface_ip(name):
+    """The interface's IPv4 address, or "" (none yet: DHCP still running)."""
+    return _match(r"\binet ([\d.]+)", _run("ip", "-4", "-o", "addr", "show", "dev", name))
+
+
 def iface_info(name, gateway_if):
     if not os.path.exists(f"/sys/class/net/{name}"):
         return Iface(name, "absent")          # the second radio is hot-pluggable
@@ -87,7 +92,9 @@ def iface_info(name, gateway_if):
     if mode == "managed":
         if name == gateway_if:
             return Iface(name, "gateway", ssid, "uplink for the mesh")
-        return Iface(name, "client" if ssid else "idle", ssid)
+        if ssid:
+            return Iface(name, "client", ssid, iface_ip(name))
+        return Iface(name, "idle")
     return Iface(name, mode or "?", ssid)
 
 

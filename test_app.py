@@ -195,6 +195,26 @@ def test_human_bytes():
     assert screens.human_bytes(1_230_000_000) == "1.2 GB"
 
 
+# ---- mesh status -----------------------------------------------------------------
+
+def test_client_radio_shows_its_ip_address():
+    answers = {
+        ("iw", "dev", "wlan0", "info"): "Interface wlan0\n\ttype managed\n\tssid Home-WiFi\n",
+        ("ip", "-4", "-o", "addr", "show", "dev", "wlan0"):
+            "3: wlan0    inet 192.168.1.23/24 brd 192.168.1.255 scope global dynamic wlan0\\ valid_lft 600sec\n",
+    }
+    real_run, real_exists = mesh._run, mesh.os.path.exists
+    mesh._run = lambda *cmd, timeout=5: answers.get(cmd, "")
+    mesh.os.path.exists = lambda path: True
+    try:
+        assert mesh.iface_info("wlan0", "") == mesh.Iface("wlan0", "client", "Home-WiFi", "192.168.1.23")
+        del answers[("ip", "-4", "-o", "addr", "show", "dev", "wlan0")]     # joined, no address yet
+        assert mesh.iface_info("wlan0", "") == mesh.Iface("wlan0", "client", "Home-WiFi", "")
+        assert mesh.iface_info("wlan0", "wlan0").detail == "uplink for the mesh"   # gateway: unchanged
+    finally:
+        mesh._run, mesh.os.path.exists = real_run, real_exists
+
+
 # ---- drawing ---------------------------------------------------------------------
 
 def test_touch_area_edges():

@@ -252,7 +252,7 @@ def preview(outdir):
     uplink = mesh.MeshStatus("active", "100.66.12.1", [
         ifaces[0], mesh.Iface("wlan1", "gateway", "Home-WiFi-5G", "uplink for the mesh")])
     off = mesh.MeshStatus("inactive", "", [
-        mesh.Iface("wlan0", "client", "Home-WiFi-5G"), mesh.Iface("wlan1", "absent")])
+        mesh.Iface("wlan0", "client", "Home-WiFi-5G", "192.168.1.23"), mesh.Iface("wlan1", "absent")])
     shots = {
         "stats": screens.render_stats(s),
         "mesh_ap": screens.render_mesh(ap, "on"),
